@@ -1,0 +1,7 @@
+*.pioc.h
+*.pioc.bin
+*.bin
+*.elf
+*.hex
+*.lst
+*.map
