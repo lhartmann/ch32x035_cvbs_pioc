@@ -5,15 +5,11 @@
 #include "cvbs_text_32x24.pioc.h"
 #include "blink.pioc.h"
 
-// use defines to make more meaningful names for our GPIO pins
-#define PIN_1 PB12 // WeAct ch32x035 board uses this pin for LED
-
-static const uint8_t blink_bin[] = {
-	0x48, 0x0A,  /* BS SFR_PORT_DIR, bit0 */
-	0x48, 0x0B,  /* BS SFR_PORT_IO, bit0 */
-	0x40, 0x0B,  /* BC SFR_PORT_IO, bit0 */
-	0x60, 0x00,  /* JMP 0x000 — wraps to start */
-};
+extern union PIOC_SRAM_u {
+	uint8_t  u8 [4096];
+	uint16_t u16[2048];
+	uint32_t u32[1024];
+} PIOC_SRAM;
 
 uint32_t memtest_seed_next(uint32_t seed) {
 	constexpr uint32_t poly = 0xA0000001U;
@@ -86,20 +82,18 @@ void memdump(void *start, size_t len) {
 
 static void pioc_load(const uint8_t *data, int len)
 {
-	uint8_t *PIOC_SRAM = (uint8_t *)PIOC_SRAM_BASE;
-
 	PIOC->D8_SYS_CFG = RB_MST_RESET; // Reset
 	PIOC->D8_SYS_CFG = RB_MST_RESET; // Buy some time
 	PIOC->D8_SYS_CFG = RB_MST_RESET; // Buy some time
 	PIOC->D8_SYS_CFG = 0; // Just disable PIOC
 
-	memcpy(PIOC_SRAM, data, len); // Load code
-	memset(PIOC_SRAM+len, 0x00, 4096-len); // pad with NOP
+	memcpy(PIOC_SRAM.u8, data, len); // Load code
+	memset(PIOC_SRAM.u8 + len, 0x00, 4096 - len); // pad with NOP
 
-	memdump(PIOC_SRAM, 4096);
+	memdump(PIOC_SRAM.u8, 4096);
 
-	//	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0 | RB_MST_CLK_GATE;
-	PIOC->D8_SYS_CFG = RB_MST_CLK_GATE;
+	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0;
+	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0 | RB_MST_CLK_GATE;
 }
 
 void SetupUART4() {
@@ -109,8 +103,8 @@ void SetupUART4() {
 
 	RCC->APB1PCENR |= RCC_APB1Periph_USART4;
 	RCC->APB2PCENR |= RCC_APB2Periph_GPIOB;
-	funPinMode( PB1, GPIO_CFGLR_IN_FLOAT );
-	funPinMode( PB0, GPIO_CFGLR_OUT_2Mhz_AF_PP );
+	GPIOB->CFGLR.PIN1 = GPIO_CFGxR_IN_FLOAT;
+	GPIOB->CFGLR.PIN0 = GPIO_CFGxR_OUT_2Mhz_AF_PP;
 
 	// USART4->STATR = ; // status flags
 	// USART4->DATAR = ; // Data Register
@@ -150,22 +144,18 @@ int main()
 
 	funGpioInitAll(); // Enable GPIOs
 
-	funPinMode(PIN_1, GPIO_CFGLR_OUT_10Mhz_PP); // Set PIN_1 to output
+	GPIOB->CFGHR.PIN12 = GPIO_CFGxR_OUT_10Mhz_PP;
 
 	// Disable SWD usage of debug pins.
-	AFIO->PCFR1 = AFIO->PCFR1 & ~AFIO_PCFR1_SWJ_CFG | AFIO_PCFR1_SWJ_CFG_2;
+	AFIO->PCFR1.SW_CFG = 0b100;
 
 	uint32_t mask = 0;
 	uint32_t val  = 0;
 #define val_for_pin(pin, val) (((val) & 0xFu) << ((pin)%8*4))
 #define mask_for_pin(pin) val_for_pin(pin, 0xFu)
 
-	mask |= mask_for_pin(18);
-	val  |= val_for_pin(18, 0b1011);
-	mask |= mask_for_pin(19);
-	val  |= val_for_pin(19, 0b1011);
-
-	GPIOC->CFGXR = GPIOC->CFGXR & ~mask | val;
+	GPIOC->CFGXR.PIN18 = GPIO_CFGxR_OUT_50Mhz_AF_PP;
+	GPIOC->CFGXR.PIN19 = GPIO_CFGxR_OUT_50Mhz_AF_PP;
 
 	uint8_t *sram = (uint8_t *)PIOC_SRAM_BASE;
 	memtest(sram, 4096);
@@ -174,20 +164,23 @@ int main()
 //	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
 	pioc_load(blink_pioc_bin, sizeof(blink_pioc_bin));
 
-//	memtest(sram, 4096);
-
 	while(1)
 	{
 		GPIOC->BSXR = 1 << 2 | 1 << 19;
-		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]\n",
+		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]\n",
 			PIOC->D8_SYS_CFG,
 			PIOC->D8_DATA_EXCH,
-			PIOC->D8_CTRL_RD
+			PIOC->D8_CTRL_RD,
+			PIOC->D8_SYS_CFG,
+			PIOC->D8_PORT_IO
 		);
+
+		if (PIOC->D8_DATA_EXCH & 1)
+			GPIOB->BSHR = 1 << 12;
+		else
+			GPIOB->BCR  = 1 << 12;
+
 		GPIOC->BSXR = 1 << 18 | 1  << 3;;
-		funDigitalWrite(PIN_1, PIOC->D8_DATA_EXCH & 1); // Turn on PIN_1
-
-
 		Delay_Ms( 250 );
 	}
 }

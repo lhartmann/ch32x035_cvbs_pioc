@@ -112,6 +112,9 @@ SECTIONS
   PROVIDE( _end = _ebss);
   PROVIDE( end = . );
   PROVIDE( _eusrstack = ORIGIN(RAM) + LENGTH(RAM));
+
+  PROVIDE(PIOC_SRAM = ORIGIN(RAM) + LENGTH(RAM));
+
   /DISCARD/ : {
    *(.note .note.*)
    *(.eh_frame .eh_frame.*)
