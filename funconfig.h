@@ -1,0 +1,6 @@
+#ifndef _FUNCONFIG_H
+#define _FUNCONFIG_H
+
+#define FUNCONF_SYSTEM_CORE_CLOCK 48000000
+
+#endif

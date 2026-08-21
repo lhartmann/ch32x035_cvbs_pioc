@@ -1,0 +1,193 @@
+#include "ch32fun.h"
+#include "PIOC_SFR.h"
+#include <stdio.h>
+#include "xcgh_incrementer.pioc.h"
+#include "cvbs_text_32x24.pioc.h"
+#include "blink.pioc.h"
+
+// use defines to make more meaningful names for our GPIO pins
+#define PIN_1 PB12 // WeAct ch32x035 board uses this pin for LED
+
+static const uint8_t blink_bin[] = {
+	0x48, 0x0A,  /* BS SFR_PORT_DIR, bit0 */
+	0x48, 0x0B,  /* BS SFR_PORT_IO, bit0 */
+	0x40, 0x0B,  /* BC SFR_PORT_IO, bit0 */
+	0x60, 0x00,  /* JMP 0x000 — wraps to start */
+};
+
+uint32_t memtest_seed_next(uint32_t seed) {
+	constexpr uint32_t poly = 0xA0000001U;
+	return (seed / 2) ^ (seed % 2 * poly);
+}
+
+void memfill(void *start, size_t len, uint32_t seed=0xFFFFFFFFU) {
+	uint8_t *p = (uint8_t *)start;
+	while (len--) {
+		seed = memtest_seed_next(seed);
+
+		*p++ = uint8_t(seed);
+	}
+}
+
+void memset_u16(void *start, uint16_t val, size_t count) {
+	uint16_t *p = (uint16_t *)start;
+
+	while (count--)
+		*p++ = val;
+}
+
+void *memcheck(void *start, size_t len, uint32_t seed=0xFFFFFFFFU) {
+	uint8_t *p = (uint8_t *)start;
+	while (len--) {
+		seed = memtest_seed_next(seed);
+
+		if (*p != uint8_t(seed)) return p;
+
+		p++;
+	}
+
+	return 0;
+}
+
+bool memtest(void *start, size_t len, uint32_t seed=0xFFFFFFFFU) {
+	printf("memtest 0x%08X, size 0x%08X...\n", start, len);
+	// Fill
+	printf("  fill...\n");
+	memfill(start, len, seed);
+
+	// Check
+	printf("  check...\n");
+	void *p = memcheck(start, len);
+	if (p) {
+		printf("  Fail at 0x%08X\n", p);
+	} else {
+		printf("  Success.\n");
+	}
+
+	return !p;
+}
+
+void memdump(void *start, size_t len) {
+	uint8_t *p = (uint8_t *)start;
+	int k = 15;
+
+	printf("          +0 +1 +2 +3 +4 +5 +6 +7 +8 +9 +A +B +C +D +E +F");
+
+	while (len--) {
+		if (++k == 16) {
+			printf("\n%08x ", p);
+			k = 0;
+		}
+
+		printf(" %02X", *p++);
+	}
+	printf("\n");
+}
+
+static void pioc_load(const uint8_t *data, int len)
+{
+	uint8_t *PIOC_SRAM = (uint8_t *)PIOC_SRAM_BASE;
+
+	PIOC->D8_SYS_CFG = RB_MST_RESET; // Reset
+	PIOC->D8_SYS_CFG = RB_MST_RESET; // Buy some time
+	PIOC->D8_SYS_CFG = RB_MST_RESET; // Buy some time
+	PIOC->D8_SYS_CFG = 0; // Just disable PIOC
+
+	memcpy(PIOC_SRAM, data, len); // Load code
+	memset(PIOC_SRAM+len, 0x00, 4096-len); // pad with NOP
+
+	memdump(PIOC_SRAM, 4096);
+
+	//	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0 | RB_MST_CLK_GATE;
+	PIOC->D8_SYS_CFG = RB_MST_CLK_GATE;
+}
+
+void SetupUART4() {
+	// Use UART4 because of pin maps.
+	// TX is PB0.
+	// RX ix PB1
+
+	RCC->APB1PCENR |= RCC_APB1Periph_USART4;
+	RCC->APB2PCENR |= RCC_APB2Periph_GPIOB;
+	funPinMode( PB1, GPIO_CFGLR_IN_FLOAT );
+	funPinMode( PB0, GPIO_CFGLR_OUT_2Mhz_AF_PP );
+
+	// USART4->STATR = ; // status flags
+	// USART4->DATAR = ; // Data Register
+	constexpr uint32_t baud = 3000000;
+	USART4->BRR   =  (48000000 + baud/2) / baud;
+	USART4->CTLR1 = USART_CTLR1_UE | USART_CTLR1_TE;
+	// USART4->CTLR2 = ; // Mostly necessary for LIN or synchronous mode
+	// USART4->CTLR3 = ; // mostly for DMA and line-control
+	// USART4->GPR   = ; // mostly for smartcard and infrared
+}
+
+int putchar(int c) {
+	int retries = 10000;
+
+	if (c == '\n') {
+		while (!(USART4->STATR & USART_STATR_TXE)) if (!retries--) return 1;
+		USART4->DATAR = '\r';
+	}
+
+	while (!(USART4->STATR & USART_STATR_TXE)) if (!retries--) return 1;
+	USART4->DATAR = c;
+	return 0;
+}
+
+int _write(int fd, const char *buf, int size) {
+	while (size--) putchar(*buf++);
+	return 0;
+}
+
+int main()
+{
+	SystemInit();
+	RCC->CFGR0 = 0;
+
+	SetupUART4();
+	printf("\n\n\n\nHello world!\n");
+
+	funGpioInitAll(); // Enable GPIOs
+
+	funPinMode(PIN_1, GPIO_CFGLR_OUT_10Mhz_PP); // Set PIN_1 to output
+
+	// Disable SWD usage of debug pins.
+	AFIO->PCFR1 = AFIO->PCFR1 & ~AFIO_PCFR1_SWJ_CFG | AFIO_PCFR1_SWJ_CFG_2;
+
+	uint32_t mask = 0;
+	uint32_t val  = 0;
+#define val_for_pin(pin, val) (((val) & 0xFu) << ((pin)%8*4))
+#define mask_for_pin(pin) val_for_pin(pin, 0xFu)
+
+	mask |= mask_for_pin(18);
+	val  |= val_for_pin(18, 0b1011);
+	mask |= mask_for_pin(19);
+	val  |= val_for_pin(19, 0b1011);
+
+	GPIOC->CFGXR = GPIOC->CFGXR & ~mask | val;
+
+	uint8_t *sram = (uint8_t *)PIOC_SRAM_BASE;
+	memtest(sram, 4096);
+
+//	pioc_load(xcgh_incrementer_pioc_bin, sizeof(xcgh_incrementer_pioc_bin));
+//	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
+	pioc_load(blink_pioc_bin, sizeof(blink_pioc_bin));
+
+//	memtest(sram, 4096);
+
+	while(1)
+	{
+		GPIOC->BSXR = 1 << 2 | 1 << 19;
+		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]\n",
+			PIOC->D8_SYS_CFG,
+			PIOC->D8_DATA_EXCH,
+			PIOC->D8_CTRL_RD
+		);
+		GPIOC->BSXR = 1 << 18 | 1  << 3;;
+		funDigitalWrite(PIN_1, PIOC->D8_DATA_EXCH & 1); // Turn on PIN_1
+
+
+		Delay_Ms( 250 );
+	}
+}
