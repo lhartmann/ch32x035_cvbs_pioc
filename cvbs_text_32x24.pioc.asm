@@ -24,13 +24,17 @@ INCLUDE     PIOC_INC.ASM
 ;INCLUDE    font.asm
 
 ; Local variables
-COUNTER     EQU SFR_INDIR_ADDR2
+LINE_COUNTER  EQU SFR_INDIR_ADDR2 ; used for vertical counts, scanlines or lines of text
+DELAY_COUNTER EQU SFR_DATA_EXCH ; used for horizontal counts, but only blanked area.
 
 ; Constants
 V_BACK      EQU 48
 V_ACTIVE    EQU 192
 V_FRONT     EQU 19
 V_SYNC      EQU 3
+
+SYNC_SHORT  EQU 19  ; Trial an error, target 4.70us
+SYNC_LONG   EQU 235 ; Trial an error, target 58.85us
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 MCU_START:
@@ -43,11 +47,25 @@ INCLUDE timer_ntsc.asm
 
 screen:
     inc     SFR_CTRL_RD, F
+
+    ;; HACK BEGIN : Sync tuning
+;     movl    SYNC_SHORT
+;     call    gen_sync
+;     jmp     screen
+;
+    ;; HACK END
+
+    ; HACK BEGIN : scanline test
+; hack_loop:
+;     call    sync_scanline
+;     jmp     hack_loop
+    ; HACK END
+
     movl    V_BACK
+    mova    LINE_COUNTER
 vertical_back_porch_loop:
-    mova    COUNTER
     call    blank_scanline
-    decsz   COUNTER, F
+    decsz   LINE_COUNTER, F
     jmp     vertical_back_porch_loop
 
     ; 24 lines of text, 8 scanlines each Unrolled to save ram.
@@ -77,64 +95,83 @@ vertical_back_porch_loop:
     call    line_of_text
 
     movl    V_FRONT
+    mova    LINE_COUNTER
 vertical_front_porch_loop:
-    mova    COUNTER
     call    blank_scanline
-    decsz   COUNTER, F
+    decsz   LINE_COUNTER, F
     jmp     vertical_front_porch_loop
 
     movl    V_SYNC
+    mova    LINE_COUNTER
 vertical_sync_loop:
-    mova    COUNTER
     call    sync_scanline
-    decsz   COUNTER, F
+    decsz   LINE_COUNTER, F
     jmp     vertical_sync_loop
 
     jmp     screen
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 blank_scanline:
-    call timer_ntsc_sync
-    ; generate short pulse;
-    bc     SFR_PORT_IO, SB_PORT_OUT1
-    bs     SFR_PORT_IO, SB_PORT_OUT1
-    ret
+    call    timer_ntsc_sync
+    movl    SYNC_SHORT
+    jmp     gen_sync
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 sync_scanline:
-    call timer_ntsc_sync
-    ; generate long pulse;
+    call    timer_ntsc_sync
+    movl    SYNC_LONG
+    jmp     gen_sync
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+gen_sync:
+    mova    DELAY_COUNTER
+    bc      SFR_PORT_IO, SB_PORT_OUT1
+gen_sync_loop:
+    nop     ; Number of nops enough that long sync is less then 255 loops.
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    decsz   DELAY_COUNTER, F
+    jmp     gen_sync_loop
+    bs      SFR_PORT_IO, SB_PORT_OUT1
     ret
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 line_of_text:
     ; [ TODO, wait for the right time: 20px front porch, measured from last active pixel ]
-    bc     SFR_PORT_IO, SB_PORT_OUT1
-    ; [ TODO, wait for the right time: 25px sync pulse ]
-    bs     SFR_PORT_IO, SB_PORT_OUT1
+    ; [ TODO, wait for the right time: 25px sync pulse
     ; 40 blank pixels
     ; 256 image pixels
 
     ; Load text from host, 32 bytes for one full line (T = 32*3 = 96 clocks)
-    waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-    mov     SFR_CTRL_WR, A      ; Load byte
-    mova    SFR_DATA_REG0       ; Save byte
-    waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-    mov     SFR_CTRL_WR, A      ; Load byte
-    mova    SFR_DATA_REG1       ; Save byte
-    waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-    mov     SFR_CTRL_WR, A      ; Load byte
-    mova    SFR_DATA_REG2       ; Save byte
-    ; ...
-    waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-    mov     SFR_CTRL_WR, A      ; Load byte
-    mova    SFR_DATA_REG31      ; Save byte
+;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
+;     mov     SFR_CTRL_WR, A      ; Load byte
+;     mova    SFR_DATA_REG0       ; Save byte
+;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
+;     mov     SFR_CTRL_WR, A      ; Load byte
+;     mova    SFR_DATA_REG1       ; Save byte
+;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
+;     mov     SFR_CTRL_WR, A      ; Load byte
+;     mova    SFR_DATA_REG2       ; Save byte
+;     ; ...
+;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
+;     mov     SFR_CTRL_WR, A      ; Load byte
+;     mova    SFR_DATA_REG31      ; Save byte
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 display_text:
     movl    0
-    mova    COUNTER
+    mova    LINE_COUNTER
 
 display_text_loop:
     call    timer_ntsc_sync
+    movl    SYNC_SHORT
+    call    gen_sync
     ; [ TODO, wait for the right time, center image horizontally ]
 
     ; Loop over columns, but without a counter
@@ -206,9 +243,9 @@ display_text_loop:
     movl    0x20                ; Display [31], load ' ' (space)
     call    display_inner_loop
 
-    inc     COUNTER, F          ; Next row
+    inc     LINE_COUNTER, F          ; Next row
     movl    8                   ; Loop until ROW_COUNTER == 8
-    sub     COUNTER, A
+    sub     LINE_COUNTER, A
     jnz     display_text_loop
     jmp     hsync               ; tail-call hsync
 
@@ -219,12 +256,12 @@ display_inner_loop:
     bp2f    BO_PORT_OUT0, 6             ; (T0+1) Display pixel 6 from SFR_DATA_EXCH
     mova    SFR_INDIR_ADDR              ; (T1+1) Set pointer: 0x400 + row/2 * 256 + byte)
     bc      SFR_STATUS_REG, SB_FLAG_C   ; (T2+1)
-    rcr     COUNTER, A              ; (T3+1)
+    rcr     LINE_COUNTER, A              ; (T3+1)
     iorl    0x4                         ; (T4+1)
     nop                                 ; (T5+1 = 6)
     bp2f    BO_PORT_OUT0, 5             ; (T0+1) Display pixel 5 from SFR_DATA_EXCH
     rdcode                              ; (T1+3) Read font data: SFR_INDIR_ADDR:A <= ROM(A:SFR_INDIR_ADDR)
-    btsc    COUNTER, 0              ; (T4+1 or T4+2 = 6) Add rows take from INDIR, even keep A
+    btsc    LINE_COUNTER, 0              ; (T4+1 or T4+2 = 6) Add rows take from INDIR, even keep A
     mov     SFR_INDIR_ADDR              ; (T5+1 or T6+0 = 6)
     bp2f    BO_PORT_OUT0, 4             ; (T0+1) Display pixel 4 from SFR_DATA_EXCH
     call    DELAY_5                     ; (T1+5 = 6)

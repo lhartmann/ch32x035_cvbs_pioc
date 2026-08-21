@@ -161,18 +161,21 @@ int main()
 	memtest(sram, 4096);
 
 //	pioc_load(xcgh_incrementer_pioc_bin, sizeof(xcgh_incrementer_pioc_bin));
-//	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
-	pioc_load(blink_pioc_bin, sizeof(blink_pioc_bin));
+	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
+//	pioc_load(blink_pioc_bin, sizeof(blink_pioc_bin));
 
 	while(1)
 	{
 		GPIOC->BSXR = 1 << 2 | 1 << 19;
-		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]\n",
+		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]  TIMER0[INT=%02X, CNT=%02X, CTL=%02X]\n",
 			PIOC->D8_SYS_CFG,
 			PIOC->D8_DATA_EXCH,
 			PIOC->D8_CTRL_RD,
 			PIOC->D8_SYS_CFG,
-			PIOC->D8_PORT_IO
+			PIOC->D8_PORT_IO,
+			PIOC->D8_TMR0_INIT,
+			PIOC->D8_TMR0_COUNT,
+			PIOC->D8_TMR0_CTRL
 		);
 
 		if (PIOC->D8_DATA_EXCH & 1)

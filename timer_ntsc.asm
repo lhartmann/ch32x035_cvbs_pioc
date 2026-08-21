@@ -3,8 +3,10 @@ timer_ntsc_setup:
     ; With Fcpu=48MHz, period = 3050 clocks
     movl    65                                  ; Set period to 191, i.e., start counting at 256 - 191 = 65
     mova    SFR_TMR0_INIT
-    movl    SB_TMR0_ENABLE|SB_TMR0_FREQ_DIV16   ; Prescaled by 16, and enable
+
+    movl    SB_TMR0_FREQ_DIV16   ; Prescaled by 16, and enable
     mova    SFR_TIMER_CTRL
+    bs      SFR_TIMER_CTRL, SB_TMR0_ENABLE
 timer_ntsc_sync_done: ; Reuse ret
     ret
 
@@ -22,7 +24,7 @@ timer_ntsc_sync:
     nop                                     ; T9
     nop                                     ; T10
     nop                                     ; T11
-    nop                                     ; did I miscount?
+    ; nop                                     ; did I miscount? Nope, simulator mismatch.
     movl    0                               ; T12
     add     SFR_TMR0_COUNT, A               ; T13 T14 T15 ; reads 255 255 255
     add     SFR_TMR0_COUNT, A               ; T14 T15 T16 ; reads 255 255  65
