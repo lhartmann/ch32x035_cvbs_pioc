@@ -232,7 +232,7 @@ display_text_horizontal_delay:
     movl    0x20                ; Display [31], load ' ' (space)
     call    display_inner_loop
 
-    inc     LINE_COUNTER, F          ; Next row
+    inc     LINE_COUNTER, F     ; Next row
     movl    8                   ; Loop until ROW_COUNTER == 8
     sub     LINE_COUNTER, A
     jnz     display_text_loop
@@ -246,27 +246,26 @@ display_inner_loop:
     mova    SFR_INDIR_ADDR              ; (T1+1) Set pointer: 0x400 + row/2 * 256 + byte)
     bc      SFR_STATUS_REG, SB_FLAG_C   ; (T2+1)
     rcr     LINE_COUNTER, A             ; (T3+1)
-    iorl    0x4                         ; (T4+1)
-    nop                                 ; (T5+1 = 6)
-    nop                                 ; (T5+1 = 6)
-    nop                                 ; (T5+1 = 6)
+    call    DELAY_4                     ; (T4+4 = 8)
     bp2f    BO_PORT_OUT0, 5             ; (T0+1) Display pixel 5 from SFR_DATA_EXCH
-    rdcode                              ; (T1+3) Read font data: SFR_INDIR_ADDR:A <= ROM(A:SFR_INDIR_ADDR)
-    btsc    LINE_COUNTER, 0              ; (T4+1 or T4+2 = 6) Add rows take from INDIR, even keep A
-    mov     SFR_INDIR_ADDR              ; (T5+1 or T6+0 = 6)
+    iorl    0x4                         ; (T1+1)
+    rdcode                              ; (T2+3) Read font data: SFR_INDIR_ADDR:A <= ROM(A:SFR_INDIR_ADDR)
+    btsc    LINE_COUNTER, 0             ; (T5+1 or T5+2 = 7) Add rows take from INDIR, even keep A
+    mov     SFR_INDIR_ADDR              ; (T6+1 or T7+0 = 7)
+    nop                                 ; (T7+1)
     bp2f    BO_PORT_OUT0, 4             ; (T0+1) Display pixel 4 from SFR_DATA_EXCH
-    call    DELAY_7                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+7 = 8)
     bp2f    BO_PORT_OUT0, 3             ; (T0+1) Display pixel 3 from SFR_DATA_EXCH
-    call    DELAY_7                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+7 = 8)
     bp2f    BO_PORT_OUT0, 2             ; (T0+1) Display pixel 2 from SFR_DATA_EXCH
-    call    DELAY_7                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+7 = 8)
     bp2f    BO_PORT_OUT0, 1             ; (T0+1) Display pixel 1 from SFR_DATA_EXCH
-    call    DELAY_7                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+7 = 8)
     bp2f    BO_PORT_OUT0, 0             ; (T0+1) Display pixel 0 from SFR_DATA_EXCH
     mova    SFR_DATA_EXCH               ; (T1+1) Update buffer with next pixel
-    call    DELAY_6                     ; (T2+4 = 6)
+    call    DELAY_6                     ; (T2+6 = 8)
     bp2f    BO_PORT_OUT0, 7             ; (T0+1) Display pixel 7 from SFR_DATA_EXCH (next)
-    ret                                 ; (T1+2 = 3) Outter code takes +3 for mov+call.
+    jmp     DELAY_4                     ; (T1+4 = 5) Outter code takes +3 for mov+call.
 
 DELAY_7:
     nop
@@ -277,16 +276,9 @@ DELAY_5:
 DELAY_4:
     ret
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; horizontal sync for "full" periods, like active scanlines.           ;;
-;; Arguments:                                                           ;;
-;;     A: number of sync cyles to generate. Each is 2 timer perids.     ;;
-;; Clobers:                                                             ;;
-;;          ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-hsync_full:
 
-    ret
+INCLUDE fonts/zx81_ascii.inc
+
 
     end
 
