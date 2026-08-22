@@ -22,14 +22,33 @@ def get_byte_for(code,  line):
         val = val*2 + (1 if px!=215 else 0)
     return val
 
-out = "static const uint8_t zx81_ascii_font[] = {\n"
-out += "\t7, // shift, 2**6 gliphs\n"
+# Set pointer: row/2 * 512 + byte*2 + line%1
+data = [ 0 ] * 2048
 for line in range(8):
-    for code in range(128):
-        out += f'\t{get_byte_for(code, line)},\n'
-out += "};\n"
+    for code in range(256):
+        offset = line//2 * 512 + code * 2 + line % 2
+        data[offset] = get_byte_for(code%128, line) ^ (0xff if code // 128 else 0)
 
-with open("zx81_ascii.h","w") as f:
+# PIOC ASM styled font, 16-bit words
+# 0x400 + row/2 * 256 + code
+out  = "org 0x400\n"
+out += "font:\n"
+
+for i in range(1024):
+    code  = i %  256
+    row_l = i // 256 * 2
+    row_h = i // 256 * 2 + 1
+    pixels_l = get_byte_for(code%128, row_l)
+    pixels_h = get_byte_for(code%128, row_h)
+
+    if code >= 128:
+        pixels_l ^= 0xFF
+        pixels_h ^= 0xFF
+
+    word = pixels_h * 256 + pixels_l
+    out += f'\tDW   {word}\n'
+
+with open("zx81_ascii_font.inc","w") as f:
     f.write(out)
 
 print(cnt)
