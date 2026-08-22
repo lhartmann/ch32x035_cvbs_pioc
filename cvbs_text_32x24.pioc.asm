@@ -155,8 +155,8 @@ display_text_loop:
     call    timer_ntsc_sync
     movl    SYNC_SHORT
     call    gen_sync
-    ; [ TODO, wait for the right time, center image horizontally ]
 
+    ; Horizontal back porch
     movl    H_BACK
     mova    DELAY_COUNTER
 display_text_horizontal_delay:
@@ -251,8 +251,8 @@ display_inner_loop:
     iorl    0x4                         ; (T1+1)
     rdcode                              ; (T2+3) Read font data: SFR_INDIR_ADDR:A <= ROM(A:SFR_INDIR_ADDR)
     btsc    LINE_COUNTER, 0             ; (T5+1 or T5+2 = 7) Add rows take from INDIR, even keep A
-    mov     SFR_INDIR_ADDR              ; (T6+1 or T7+0 = 7)
-    nop                                 ; (T7+1)
+    mov     SFR_INDIR_ADDR, A           ; (T6+1 or T7+0 = 7)
+    nop                                 ; (T7+1 = 8)
     bp2f    BO_PORT_OUT0, 4             ; (T0+1) Display pixel 4 from SFR_DATA_EXCH
     call    DELAY_7                     ; (T1+7 = 8)
     bp2f    BO_PORT_OUT0, 3             ; (T0+1) Display pixel 3 from SFR_DATA_EXCH
@@ -277,7 +277,7 @@ DELAY_4:
     ret
 
 
-INCLUDE fonts/zx81_ascii.inc
+INCLUDE fonts/zx81_ascii_font.inc
 
 
     end
