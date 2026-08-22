@@ -35,7 +35,7 @@ V_SYNC      EQU 3
 
 SYNC_SHORT  EQU 19  ; Trial an error, target 4.70us
 SYNC_LONG   EQU 235 ; Trial an error, target 58.85us
-H_BACK      EQU 200 ; Trial an error, target 58.85us
+H_BACK      EQU 150 ; Trial an error, target 58.85us
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 MCU_START:
@@ -236,7 +236,7 @@ display_text_horizontal_delay:
     movl    8                   ; Loop until ROW_COUNTER == 8
     sub     LINE_COUNTER, A
     jnz     display_text_loop
-    jmp     hsync               ; tail-call hsync
+    ret
 
 display_inner_loop:
     ; Display 8 pixels while loading the next 8 (ideally)
@@ -245,27 +245,33 @@ display_inner_loop:
     bp2f    BO_PORT_OUT0, 6             ; (T0+1) Display pixel 6 from SFR_DATA_EXCH
     mova    SFR_INDIR_ADDR              ; (T1+1) Set pointer: 0x400 + row/2 * 256 + byte)
     bc      SFR_STATUS_REG, SB_FLAG_C   ; (T2+1)
-    rcr     LINE_COUNTER, A              ; (T3+1)
+    rcr     LINE_COUNTER, A             ; (T3+1)
     iorl    0x4                         ; (T4+1)
+    nop                                 ; (T5+1 = 6)
+    nop                                 ; (T5+1 = 6)
     nop                                 ; (T5+1 = 6)
     bp2f    BO_PORT_OUT0, 5             ; (T0+1) Display pixel 5 from SFR_DATA_EXCH
     rdcode                              ; (T1+3) Read font data: SFR_INDIR_ADDR:A <= ROM(A:SFR_INDIR_ADDR)
     btsc    LINE_COUNTER, 0              ; (T4+1 or T4+2 = 6) Add rows take from INDIR, even keep A
     mov     SFR_INDIR_ADDR              ; (T5+1 or T6+0 = 6)
     bp2f    BO_PORT_OUT0, 4             ; (T0+1) Display pixel 4 from SFR_DATA_EXCH
-    call    DELAY_5                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+5 = 6)
     bp2f    BO_PORT_OUT0, 3             ; (T0+1) Display pixel 3 from SFR_DATA_EXCH
-    call    DELAY_5                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+5 = 6)
     bp2f    BO_PORT_OUT0, 2             ; (T0+1) Display pixel 2 from SFR_DATA_EXCH
-    call    DELAY_5                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+5 = 6)
     bp2f    BO_PORT_OUT0, 1             ; (T0+1) Display pixel 1 from SFR_DATA_EXCH
-    call    DELAY_5                     ; (T1+5 = 6)
+    call    DELAY_7                     ; (T1+5 = 6)
     bp2f    BO_PORT_OUT0, 0             ; (T0+1) Display pixel 0 from SFR_DATA_EXCH
     mova    SFR_DATA_EXCH               ; (T1+1) Update buffer with next pixel
-    call    DELAY_4                     ; (T2+4 = 6)
+    call    DELAY_6                     ; (T2+4 = 6)
     bp2f    BO_PORT_OUT0, 7             ; (T0+1) Display pixel 7 from SFR_DATA_EXCH (next)
     ret                                 ; (T1+2 = 3) Outter code takes +3 for mov+call.
 
+DELAY_7:
+    nop
+DELAY_6:
+    nop
 DELAY_5:
     nop
 DELAY_4:
@@ -280,11 +286,6 @@ DELAY_4:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 hsync_full:
 
-    ret
-
-
-hsync:
-    call timer_ntsc_sync
     ret
 
     end
