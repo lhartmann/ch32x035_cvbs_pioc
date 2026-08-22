@@ -90,6 +90,9 @@ static void pioc_load(const uint8_t *data, int len)
 	memcpy(PIOC_SRAM.u8, data, len); // Load code
 	memset(PIOC_SRAM.u8 + len, 0x00, 4096 - len); // pad with NOP
 
+	// memfill(PIOC_SRAM.u8 + len, 4096 - len); // pad with NOP
+	memset(PIOC_SRAM.u8 + len, 0x55, 4096 - len); // pad with NOP
+
 	memdump(PIOC_SRAM.u8, 4096);
 
 	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0;
@@ -163,6 +166,15 @@ int main()
 //	pioc_load(xcgh_incrementer_pioc_bin, sizeof(xcgh_incrementer_pioc_bin));
 	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
 //	pioc_load(blink_pioc_bin, sizeof(blink_pioc_bin));
+
+	PIOC->D32_DATA_REG0_3   = 0x43424140U;
+	PIOC->D32_DATA_REG4_7   = 0x47464544U;
+	PIOC->D32_DATA_REG8_11  = 0x4b4a4948U;
+	PIOC->D32_DATA_REG12_15 = 0x4f4e4d4cU;
+	PIOC->D32_DATA_REG16_19 = 0x53525150U;
+	PIOC->D32_DATA_REG20_23 = 0x57565554U;
+	PIOC->D32_DATA_REG24_27 = 0x5b5a5958U;
+	PIOC->D32_DATA_REG28_31 = 0x5f5e5d5cU;
 
 	while(1)
 	{

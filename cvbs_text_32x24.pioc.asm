@@ -35,6 +35,7 @@ V_SYNC      EQU 3
 
 SYNC_SHORT  EQU 19  ; Trial an error, target 4.70us
 SYNC_LONG   EQU 235 ; Trial an error, target 58.85us
+H_BACK      EQU 200 ; Trial an error, target 58.85us
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 MCU_START:
@@ -46,8 +47,6 @@ MCU_START:
 INCLUDE timer_ntsc.asm
 
 screen:
-    inc     SFR_CTRL_RD, F
-
     ;; HACK BEGIN : Sync tuning
 ;     movl    SYNC_SHORT
 ;     call    gen_sync
@@ -60,6 +59,20 @@ screen:
 ;     call    sync_scanline
 ;     jmp     hack_loop
     ; HACK END
+
+    movl    V_FRONT
+    mova    LINE_COUNTER
+vertical_front_porch_loop:
+    call    blank_scanline
+    decsz   LINE_COUNTER, F
+    jmp     vertical_front_porch_loop
+
+    movl    V_SYNC
+    mova    LINE_COUNTER
+vertical_sync_loop:
+    call    sync_scanline
+    decsz   LINE_COUNTER, F
+    jmp     vertical_sync_loop
 
     movl    V_BACK
     mova    LINE_COUNTER
@@ -94,19 +107,8 @@ vertical_back_porch_loop:
     call    line_of_text
     call    line_of_text
 
-    movl    V_FRONT
-    mova    LINE_COUNTER
-vertical_front_porch_loop:
-    call    blank_scanline
-    decsz   LINE_COUNTER, F
-    jmp     vertical_front_porch_loop
-
-    movl    V_SYNC
-    mova    LINE_COUNTER
-vertical_sync_loop:
-    call    sync_scanline
-    decsz   LINE_COUNTER, F
-    jmp     vertical_sync_loop
+    movl    0xFF
+    mova    SFR_CTRL_RD
 
     jmp     screen
 
@@ -143,28 +145,9 @@ gen_sync_loop:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 line_of_text:
-    ; [ TODO, wait for the right time: 20px front porch, measured from last active pixel ]
-    ; [ TODO, wait for the right time: 25px sync pulse
-    ; 40 blank pixels
-    ; 256 image pixels
-
-    ; Load text from host, 32 bytes for one full line (T = 32*3 = 96 clocks)
-;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-;     mov     SFR_CTRL_WR, A      ; Load byte
-;     mova    SFR_DATA_REG0       ; Save byte
-;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-;     mov     SFR_CTRL_WR, A      ; Load byte
-;     mova    SFR_DATA_REG1       ; Save byte
-;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-;     mov     SFR_CTRL_WR, A      ; Load byte
-;     mova    SFR_DATA_REG2       ; Save byte
-;     ; ...
-;     waitb   WB_DATA_MW_SR_1     ; Wait byte from master
-;     mov     SFR_CTRL_WR, A      ; Load byte
-;     mova    SFR_DATA_REG31      ; Save byte
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-display_text:
+    INC    SFR_CTRL_RD, F ; Let the CPU know it is time to send text.
+    ; Text is received by having the host write directly to R0-R31.
+    ; Host better be done before we need it.
     movl    0
     mova    LINE_COUNTER
 
@@ -173,6 +156,12 @@ display_text_loop:
     movl    SYNC_SHORT
     call    gen_sync
     ; [ TODO, wait for the right time, center image horizontally ]
+
+    movl    H_BACK
+    mova    DELAY_COUNTER
+display_text_horizontal_delay:
+    decsz  DELAY_COUNTER, F
+    jmp     display_text_horizontal_delay
 
     ; Loop over columns, but without a counter
     clr     SFR_DATA_EXCH       ; Start with blank pixels
