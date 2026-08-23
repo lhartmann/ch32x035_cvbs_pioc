@@ -150,8 +150,11 @@ void PIOC_IRQHandler() {
 
 		if (scanline == 0xff) {
 			// Entering vblank
-			// NOP for now
-		} else {
+			static uint32_t offset = 0;
+			for (size_t i=0; i< sizeof(vram); i++)
+				vram.u8[i] = i + offset;
+			offset++;
+		} else if (scanline % 8 == 0) {
 			uint32_t *p = vram.u32 + scanline/8 * (32 / sizeof(uint32_t));
 			PIOC->D32_DATA_REG0_3   = p[0];
 			PIOC->D32_DATA_REG4_7   = p[1];
@@ -181,11 +184,6 @@ int main()
 	// Disable SWD usage of debug pins.
 	AFIO->PCFR1.SW_CFG = 0b100;
 
-	uint32_t mask = 0;
-	uint32_t val  = 0;
-#define val_for_pin(pin, val) (((val) & 0xFu) << ((pin)%8*4))
-#define mask_for_pin(pin) val_for_pin(pin, 0xFu)
-
 	GPIOC->CFGXR.PIN18 = GPIO_CFGxR_OUT_50Mhz_AF_PP;
 	GPIOC->CFGXR.PIN19 = GPIO_CFGxR_OUT_50Mhz_AF_PP;
 
@@ -195,13 +193,10 @@ int main()
 	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
 	NVIC_EnableIRQ(PIOC_IRQn);
 
-	for (int i=0; i< sizeof(vram); i++)
-		vram.u8[i] = i;
-
 	while(1)
 	{
 		GPIOC->BSXR = 1 << 2 | 1 << 19;
-		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]  TIMER0[INT=%02X, CNT=%02X, CTL=%02X]  PIOC_IRQ[%08x]\n",
+		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]  TIMER0[INT=%02X, CNT=%02X, CTL=%02X]  PIOC_IRQ[%08lx]\n",
 			PIOC->D8_SYS_CFG,
 			PIOC->D8_DATA_EXCH,
 			PIOC->D8_CTRL_RD,
