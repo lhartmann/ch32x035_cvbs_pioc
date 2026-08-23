@@ -11,6 +11,13 @@ extern union PIOC_SRAM_u {
 	uint32_t u32[1024];
 } PIOC_SRAM;
 
+union vram_u {
+	uint8_t  u8 [32*24];
+	uint16_t u16[32*24/2];
+	uint32_t u32[32*24/4];
+	uint8_t  at[24][32];
+} vram;
+
 uint32_t memtest_seed_next(uint32_t seed) {
 	constexpr uint32_t poly = 0xA0000001U;
 	return (seed / 2) ^ (seed % 2 * poly);
@@ -90,9 +97,6 @@ static void pioc_load(const uint8_t *data, int len)
 	memcpy(PIOC_SRAM.u8, data, len); // Load code
 	memset(PIOC_SRAM.u8 + len, 0x00, 4096 - len); // pad with NOP
 
-	// memfill(PIOC_SRAM.u8 + len, 4096 - len); // pad with NOP
-	memset(PIOC_SRAM.u8 + len, 0x55, 4096 - len); // pad with NOP
-
 	memdump(PIOC_SRAM.u8, 4096);
 
 	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0;
@@ -137,6 +141,31 @@ int _write(int fd, const char *buf, int size) {
 	return 0;
 }
 
+extern "C" void PIOC_IRQHandler() __attribute__((interrupt));
+uint32_t PIOC_IRQHandler_counter = 0;
+void PIOC_IRQHandler() {
+	++PIOC_IRQHandler_counter;
+	if (PIOC->D8_SYS_CFG & RB_DATA_SW_MR) {
+		uint8_t scanline = PIOC->D8_CTRL_RD;
+
+		if (scanline == 0xff) {
+			// Entering vblank
+			// NOP for now
+		} else {
+			uint32_t *p = vram.u32 + scanline/8 * (32 / sizeof(uint32_t));
+			PIOC->D32_DATA_REG0_3   = p[0];
+			PIOC->D32_DATA_REG4_7   = p[1];
+			PIOC->D32_DATA_REG8_11  = p[2];
+			PIOC->D32_DATA_REG12_15 = p[3];
+			PIOC->D32_DATA_REG16_19 = p[4];
+			PIOC->D32_DATA_REG20_23 = p[5];
+			PIOC->D32_DATA_REG24_27 = p[6];
+			PIOC->D32_DATA_REG28_31 = p[7];
+		}
+	}
+	PIOC->D8_CTRL_RD = 0; // dummy write clear IRQ
+}
+
 int main()
 {
 	SystemInit();
@@ -163,23 +192,16 @@ int main()
 	uint8_t *sram = (uint8_t *)PIOC_SRAM_BASE;
 	memtest(sram, 4096);
 
-//	pioc_load(xcgh_incrementer_pioc_bin, sizeof(xcgh_incrementer_pioc_bin));
 	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
-//	pioc_load(blink_pioc_bin, sizeof(blink_pioc_bin));
+	NVIC_EnableIRQ(PIOC_IRQn);
 
-	PIOC->D32_DATA_REG0_3   = 0x43424140U;
-	PIOC->D32_DATA_REG4_7   = 0x47464544U;
-	PIOC->D32_DATA_REG8_11  = 0x4b4a4948U;
-	PIOC->D32_DATA_REG12_15 = 0x4f4e4d4cU;
-	PIOC->D32_DATA_REG16_19 = 0x53525150U;
-	PIOC->D32_DATA_REG20_23 = 0x57565554U;
-	PIOC->D32_DATA_REG24_27 = 0x5b5a5958U;
-	PIOC->D32_DATA_REG28_31 = 0x5f5e5d5cU;
+	for (int i=0; i< sizeof(vram); i++)
+		vram.u8[i] = i;
 
 	while(1)
 	{
 		GPIOC->BSXR = 1 << 2 | 1 << 19;
-		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]  TIMER0[INT=%02X, CNT=%02X, CTL=%02X]\n",
+		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]  TIMER0[INT=%02X, CNT=%02X, CTL=%02X]  PIOC_IRQ[%08x]\n",
 			PIOC->D8_SYS_CFG,
 			PIOC->D8_DATA_EXCH,
 			PIOC->D8_CTRL_RD,
@@ -187,7 +209,8 @@ int main()
 			PIOC->D8_PORT_IO,
 			PIOC->D8_TMR0_INIT,
 			PIOC->D8_TMR0_COUNT,
-			PIOC->D8_TMR0_CTRL
+			PIOC->D8_TMR0_CTRL,
+			PIOC_IRQHandler_counter
 		);
 
 		if (PIOC->D8_DATA_EXCH & 1)

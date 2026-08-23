@@ -82,6 +82,7 @@ vertical_back_porch_loop:
     jmp     vertical_back_porch_loop
 
     ; 24 lines of text, 8 scanlines each Unrolled to save ram.
+    movl    1 ; on first line_of_text call, increment SFR_CTRL_RD by 1 scanline, so 0xFF becomes 0x00.
     call    line_of_text
     call    line_of_text
     call    line_of_text
@@ -107,9 +108,10 @@ vertical_back_porch_loop:
     call    line_of_text
     call    line_of_text
 
-    movl    0xFF
+    movl    0xFF            ; Signal vblank by sending 0xFF
     mova    SFR_CTRL_RD
-
+    bs      SFR_SYS_CFG, SB_INT_REQ
+    movl    1
     jmp     screen
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -145,7 +147,9 @@ gen_sync_loop:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 line_of_text:
-    INC    SFR_CTRL_RD, F ; Let the CPU know it is time to send text.
+    ADD     SFR_CTRL_RD, F ; Let the CPU know it is time to send text.
+    bs      SFR_SYS_CFG, SB_INT_REQ
+
     ; Text is received by having the host write directly to R0-R31.
     ; Host better be done before we need it.
     movl    0
@@ -236,6 +240,8 @@ display_text_horizontal_delay:
     movl    8                   ; Loop until ROW_COUNTER == 8
     sub     LINE_COUNTER, A
     jnz     display_text_loop
+
+    movl    8 ; If line_of_text is called again, increment SFR_CTRL_RD by 8 scanlines
     ret
 
 display_inner_loop:
