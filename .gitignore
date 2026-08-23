@@ -5,3 +5,5 @@
 *.hex
 *.lst
 *.map
+
+fonts/*.inc
