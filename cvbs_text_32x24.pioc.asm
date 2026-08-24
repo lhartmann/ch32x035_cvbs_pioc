@@ -170,71 +170,71 @@ display_text_horizontal_delay:
     ; Loop over columns, but without a counter
     clr     SFR_DATA_EXCH       ; Start with blank pixels
     mov     SFR_DATA_REG0, A    ; Display blank, load [0]
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG1, A    ; Display [0], load [1]
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG2, A    ; Display [1], load [2]
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG3, A    ; ...
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG4, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG5, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG6, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG7, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG8, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG9, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG10, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG11, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG12, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG13, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG14, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG15, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG16, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG17, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG18, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG19, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG20, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG21, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG22, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG23, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG24, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG25, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG26, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG27, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG28, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG29, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG30, A
-    call    display_inner_loop
+    call    text_glyph_loop
     mov     SFR_DATA_REG31, A
-    call    display_inner_loop
+    call    text_glyph_loop
     movl    0x20                ; Display [31], load ' ' (space)
-    call    display_inner_loop
+    call    text_glyph_loop
 
     inc     LINE_COUNTER, F     ; Next row
     movl    8                   ; Loop until ROW_COUNTER == 8
@@ -244,14 +244,14 @@ display_text_horizontal_delay:
     movl    8 ; If line_of_text is called again, increment SFR_CTRL_RD by 8 scanlines
     ret
 
-display_inner_loop:
+text_glyph_loop:
     ; Display 8 pixels while loading the next 8 (ideally)
     ; Actually already displays the first pixel of next set, because timing.
     ; glyph is at 0x100
     bp2f    BO_PORT_OUT0, 6             ; (T0+1) Display pixel 6 from SFR_DATA_EXCH
     mova    SFR_INDIR_ADDR              ; (T1+1) Set pointer: 0x400 + row/2 * 256 + byte)
-    bc      SFR_STATUS_REG, SB_FLAG_C   ; (T2+1)
-    rcr     LINE_COUNTER, A             ; (T3+1)
+    rcr     LINE_COUNTER, A             ; (T2+1)
+    andl    0x03                        ; (T3+1)
     call    DELAY_4                     ; (T4+4 = 8)
     bp2f    BO_PORT_OUT0, 5             ; (T0+1) Display pixel 5 from SFR_DATA_EXCH
     iorl    0x4                         ; (T1+1)
