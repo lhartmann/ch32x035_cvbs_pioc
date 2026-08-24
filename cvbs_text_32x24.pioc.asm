@@ -59,7 +59,11 @@ screen:
 ;     call    sync_scanline
 ;     jmp     hack_loop
     ; HACK END
+    movl    0xFF            ; Signal vblank by sending 0xFF
+    mova    SFR_CTRL_RD
+    bs      SFR_SYS_CFG, SB_INT_REQ
 
+    ; vertical front porch
     movl    V_FRONT
     mova    LINE_COUNTER
 vertical_front_porch_loop:
@@ -67,6 +71,7 @@ vertical_front_porch_loop:
     decsz   LINE_COUNTER, F
     jmp     vertical_front_porch_loop
 
+    ; vertical sync pulse
     movl    V_SYNC
     mova    LINE_COUNTER
 vertical_sync_loop:
@@ -74,6 +79,7 @@ vertical_sync_loop:
     decsz   LINE_COUNTER, F
     jmp     vertical_sync_loop
 
+    ; Vertical back porch
     movl    V_BACK
     mova    LINE_COUNTER
 vertical_back_porch_loop:
@@ -107,11 +113,6 @@ vertical_back_porch_loop:
     call    line_of_text
     call    line_of_text
     call    line_of_text
-
-    movl    0xFF            ; Signal vblank by sending 0xFF
-    mova    SFR_CTRL_RD
-    bs      SFR_SYS_CFG, SB_INT_REQ
-    movl    1
     jmp     screen
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -164,7 +165,7 @@ display_text_loop:
     movl    H_BACK
     mova    DELAY_COUNTER
 display_text_horizontal_delay:
-    decsz  DELAY_COUNTER, F
+    decsz   DELAY_COUNTER, F
     jmp     display_text_horizontal_delay
 
     ; Loop over columns, but without a counter
