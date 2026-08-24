@@ -1,9 +1,10 @@
 #include "ch32fun.h"
 #include "PIOC_SFR.h"
 #include <stdio.h>
-#include "xcgh_incrementer.pioc.h"
+#include <stdlib.h>
 #include "cvbs_text_32x24.pioc.h"
 #include "blink.pioc.h"
+#include "u8g2_256x192.h"
 
 extern union PIOC_SRAM_u {
 	uint8_t  u8 [4096];
@@ -164,7 +165,7 @@ void PIOC_IRQHandler() {
 			if (frame_counter++ % 256 == 0)
 				if (++mode == 5)
 					mode = 0;
-//		mode = 4;
+		mode = 4;
 
 		if (mode==0 ||  mode == 1) {
 			// Graphics demo 1: procedural bitmap
@@ -230,7 +231,7 @@ void PIOC_IRQHandler() {
 						y -= 1;
 				}
 
-				setpixel(x,y);
+//				setpixel(x,y);
 
 				// NOP
 			} else {
@@ -248,6 +249,13 @@ void PIOC_IRQHandler() {
 		}
 	}
 	PIOC->D8_CTRL_RD = 0; // dummy write clear IRQ
+}
+
+uint32_t my_random() {
+	static uint32_t seed = 0x12345678;
+	for (int i=0; i<32; ++i)
+		seed = memtest_seed_next(seed);
+	return seed;
 }
 
 int main()
@@ -275,8 +283,20 @@ int main()
 	NVIC_EnableIRQ(PIOC_IRQn);
 
 	memset(&vram, 0, sizeof(vram));
+	init_u8g2(vram.u8);
+	u8g2_DrawLine(&u8g2, 0, 0, 255, 192);
+
 	while(1)
 	{
+		if (1) {
+			int x0 = my_random() % 256;
+			int x1 = my_random() % 256;
+			int y0 = my_random() % 192;
+			int y1 = my_random() % 192;
+			u8g2_DrawLine(&u8g2, x0, y0, x1, y1);
+			continue;
+		}
+
 		GPIOC->BSXR = 1 << 2 | 1 << 19;
 		printf("SYS_CFG[%02X]  EXCH[%02X]  RD[%02X]  CFG[%02X]  IO[%02X]  TIMER0[INT=%02X, CNT=%02X, CTL=%02X]  PIOC_IRQ[%08lx]\n",
 			PIOC->D8_SYS_CFG,
