@@ -87,45 +87,27 @@ vertical_back_porch_loop:
     decsz   LINE_COUNTER, F
     jmp     vertical_back_porch_loop
 
-    ; 24 lines of text, 8 scanlines each Unrolled to save ram.
-    movl    1 ; on first line_of_text call, increment SFR_CTRL_RD by 1 scanline, so 0xFF becomes 0x00.
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
-    call    line_of_text
+    ; Start active scanlines counter, and publicize to host.
+    clr     SFR_CTRL_RD
+
+    ; Default command, text mode, gliph line 0, no scanline interrupt
+    clr     SFR_CTRL_WR
+
+    ; First active scanline always interrupts
+    bs      SFR_SYS_CFG, SB_INT_REQ
+
+    clr     LINE_COUNTER
+
+active_scanline_loop:
+    call    active_scanline
+
+    inc     SFR_CTRL_RD, A
+    cmpl    192
+    btsc    SFR_STATUS_REG, SB_FLAG_Z
     jmp     screen
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-blank_scanline:
-    call    timer_ntsc_sync
-    movl    SYNC_SHORT
-    jmp     gen_sync
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-sync_scanline:
-    call    timer_ntsc_sync
-    movl    SYNC_LONG
-    jmp     gen_sync
+    inc     SFR_CTRL_RD, F
+    jmp     active_scanline_loop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 gen_sync:
@@ -147,16 +129,19 @@ gen_sync_loop:
     ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-line_of_text:
-    ADD     SFR_CTRL_RD, F ; Let the CPU know it is time to send text.
-    bs      SFR_SYS_CFG, SB_INT_REQ
+blank_scanline:
+    call    timer_ntsc_sync
+    movl    SYNC_SHORT
+    jmp     gen_sync        ; tail call
 
-    ; Text is received by having the host write directly to R0-R31.
-    ; Host better be done before we need it.
-    movl    0
-    mova    LINE_COUNTER
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+sync_scanline:
+    call    timer_ntsc_sync
+    movl    SYNC_LONG
+    jmp     gen_sync        ; tail call
 
-display_text_loop:
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+active_scanline:
     call    timer_ntsc_sync
     movl    SYNC_SHORT
     call    gen_sync
@@ -237,12 +222,13 @@ display_text_horizontal_delay:
     movl    0x20                ; Display [31], load ' ' (space)
     call    text_glyph_loop
 
-    inc     LINE_COUNTER, F     ; Next row
-    movl    8                   ; Loop until ROW_COUNTER == 8
-    sub     LINE_COUNTER, A
-    jnz     display_text_loop
+    inc     LINE_COUNTER, F     ; Next line of glyph data
 
-    movl    8 ; If line_of_text is called again, increment SFR_CTRL_RD by 8 scanlines
+    ; Request interrupt if
+    btss    LINE_COUNTER, 3         ; Rolled out of glyph data or
+    btsc    SFR_CTRL_WR, 3          ; Host Requested int per scanline.
+    bs      SFR_SYS_CFG, SB_INT_REQ
+
     ret
 
 text_glyph_loop:
