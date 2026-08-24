@@ -4,3 +4,6 @@
 [submodule "support/PYPIOC"]
 	path = support/PYPIOC
 	url = https://github.com/Kanken6174/PYPIOC.git
+[submodule "support/u8g2"]
+	path = support/u8g2
+	url = https://github.com/olikraus/u8g2

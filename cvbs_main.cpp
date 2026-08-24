@@ -12,11 +12,21 @@ extern union PIOC_SRAM_u {
 } PIOC_SRAM;
 
 union vram_u {
-	uint8_t  u8 [32*24];
-	uint16_t u16[32*24/2];
-	uint32_t u32[32*24/4];
-	uint8_t  at[24][32];
+	uint8_t  u8 [256*192/8];
+	uint16_t u16[256*192/16];
+	uint32_t u32[256*192/32];
+	uint8_t  txt[24][32];
 } vram;
+void setpixel(uint32_t x, uint32_t y) {
+	uint8_t *p = vram.u8 + y*32 + x/8;
+	uint8_t m = 1 << (7 - x%8);
+	*p |= m;
+}
+void resetpixel(uint32_t x, uint32_t y) {
+	uint8_t *p =  vram.u8 + y*32 + x/8;
+	uint8_t m = 1 << (7 - x%8);
+	*p &= ~m;
+}
 
 uint32_t memtest_seed_next(uint32_t seed) {
 	constexpr uint32_t poly = 0xA0000001U;
@@ -150,18 +160,18 @@ void PIOC_IRQHandler() {
 		uint8_t scanline = PIOC->D8_CTRL_RD;
 		static uint32_t mode = 0;
 
-		if (scanline == 0xff) {
-			// Entering vblank
-			for (size_t i=0; i< sizeof(vram); i++)
-				vram.u8[i] = 0xff;// i + frame_counter;
-			frame_counter++;
-
-//			if (frame_counter % 32 == 0)
-				if (++mode == 3)
+		if (scanline == 0xFF)
+			if (frame_counter++ % 256 == 0)
+				if (++mode == 5)
 					mode = 0;
-		} else if (mode==0) {
+//		mode = 4;
+
+		if (mode==0 ||  mode == 1) {
+			// Graphics demo 1: procedural bitmap
 			uint32_t val = 0xF0F0F0F0;
-			if (scanline / 4 % 2 == 0)
+			if (mode == 1)
+				val = 1 << (frame_counter/8%32);
+			else if (scanline / 4 % 2 == 0)
 				val = ~val;
 			PIOC->D32_DATA_REG0_3   = val;
 			PIOC->D32_DATA_REG4_7   = val;
@@ -172,7 +182,12 @@ void PIOC_IRQHandler() {
 			PIOC->D32_DATA_REG24_27 = val;
 			PIOC->D32_DATA_REG28_31 = val;
 			PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
-		} else if (mode == 1) {
+		} else if (mode == 2 || mode == 3) {
+			// Text demos, still or fast scrolling text
+			if (scanline == 0xff)
+				for (size_t i=0; i<32*24; i++)
+					vram.u8[i] = i + frame_counter * (mode == 2);
+
 			if (scanline % 8 == 0) {
 				uint32_t *p = vram.u32 + scanline/8 * (32 / sizeof(uint32_t));
 				PIOC->D32_DATA_REG0_3   = p[0];
@@ -184,6 +199,51 @@ void PIOC_IRQHandler() {
 				PIOC->D32_DATA_REG24_27 = p[6];
 				PIOC->D32_DATA_REG28_31 = p[7];
 				PIOC->D8_CTRL_WR = 0x00; // Display text from line 0, do not interrupt until 8th scanline.
+			}
+		} else if (mode == 4) {
+			// Graphics mode from vram
+			if (scanline == 0xff) {
+				static size_t x=0, y=16;
+				static bool dx=true, dy = true;
+
+				if (dx) {
+					if (x == 255)
+						dx = false;
+					else
+						x += 1;
+				} else {
+					if (x == 0)
+						dx = true;
+					else
+						x -= 1;
+				}
+
+				if (dy) {
+					if (y == 191)
+						dy = false;
+					else
+						y += 1;
+				} else {
+					if (y == 0)
+						dy = true;
+					else
+						y -= 1;
+				}
+
+				setpixel(x,y);
+
+				// NOP
+			} else {
+				uint32_t *p = vram.u32 + scanline*8;
+				PIOC->D32_DATA_REG0_3   = p[0];
+				PIOC->D32_DATA_REG4_7   = p[1];
+				PIOC->D32_DATA_REG8_11  = p[2];
+				PIOC->D32_DATA_REG12_15 = p[3];
+				PIOC->D32_DATA_REG16_19 = p[4];
+				PIOC->D32_DATA_REG20_23 = p[5];
+				PIOC->D32_DATA_REG24_27 = p[6];
+				PIOC->D32_DATA_REG28_31 = p[7];
+				PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
 			}
 		}
 	}
@@ -214,6 +274,7 @@ int main()
 	pioc_load(cvbs_text_32x24_pioc_bin, sizeof(cvbs_text_32x24_pioc_bin));
 	NVIC_EnableIRQ(PIOC_IRQn);
 
+	memset(&vram, 0, sizeof(vram));
 	while(1)
 	{
 		GPIOC->BSXR = 1 << 2 | 1 << 19;
