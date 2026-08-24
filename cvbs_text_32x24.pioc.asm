@@ -33,9 +33,9 @@ V_ACTIVE    EQU 192
 V_FRONT     EQU 19
 V_SYNC      EQU 3
 
-SYNC_SHORT  EQU 19  ; Trial an error, target 4.70us
-SYNC_LONG   EQU 235 ; Trial an error, target 58.85us
-H_BACK      EQU 150 ; Trial an error, target 58.85us
+SYNC_SHORT  EQU 19  ; Trial and error, target 4.70us
+SYNC_LONG   EQU 235 ; Trial and error, target 58.85us
+H_BACK      EQU 150 ; Trial and error, center text on screen
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 MCU_START:
@@ -101,12 +101,20 @@ vertical_back_porch_loop:
 active_scanline_loop:
     call    active_scanline
 
+    ; Enter vblank after 192 active scanlines
     inc     SFR_CTRL_RD, A
     cmpl    192
     btsc    SFR_STATUS_REG, SB_FLAG_Z
     jmp     screen
 
+    ; Increment scanline as visible from host
     inc     SFR_CTRL_RD, F
+
+    ; SP_GB_BIT_X is used to flag need for an interrupt
+    btsc    SFR_STATUS_REG, SB_GP_BIT_X
+    bs      SFR_SYS_CFG, SB_INT_REQ
+    bc      SFR_STATUS_REG, SB_GP_BIT_X
+
     jmp     active_scanline_loop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -153,13 +161,97 @@ display_text_horizontal_delay:
     decsz   DELAY_COUNTER, F
     jmp     display_text_horizontal_delay
 
+    btss    SFR_CTRL_WR, 7      ; (T1+1 or T1+2) CMD bit 7 means bitmap scanline
+    jmp     text_scanline       ; (T2+2 or ----)
+
+    ; bitmap_scanline
+    ; We need a delay to compensate for the text_scanline latency.
+    ; Both modes output on T0==T8 clock cycle.
+    ; Text mode is delayed by 7 pixels, though.
+    call    DELAY_5             ; (T3+5=8)
+    call    DELAY_8             ; (T0+8)
+    call    DELAY_8             ; (T0+8)
+    call    DELAY_8             ; (T0+8)
+    call    DELAY_8             ; (T0+8)
+    call    DELAY_8             ; (T0+8)
+    call    DELAY_8             ; (T0+8)
+    nop                         ; (T0+1)
+    nop                         ; (T1+1)
+    movl    SFR_DATA_REG0       ; (T2+1) Initiaize pointer to SFRs
+    mova    SFR_INDIR_ADDR      ; (T3+1)
+
     ; Loop over columns, but without a counter
-    clr     SFR_DATA_EXCH       ; Start with blank pixels
-    mov     SFR_DATA_REG0, A    ; Display blank, load [0]
-    call    text_glyph_loop
-    mov     SFR_DATA_REG1, A    ; Display [0], load [1]
-    call    text_glyph_loop
-    mov     SFR_DATA_REG2, A    ; Display [1], load [2]
+    call    bitmap_out_byte     ; (T4+2)
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+    call    bitmap_out_byte
+
+    call    DELAY_4                     ; (T4+4 = 8)
+    bc      SFR_PORT_IO, 0              ; Enter blanking
+
+    ; bitmap lines always pend interrupts
+    bs      SFR_STATUS_REG, SB_GP_BIT_X
+
+    ret
+
+bitmap_out_byte:
+    mov     SFR_INDIR_PORT, A           ; (T6+1)
+    mova    SFR_DATA_EXCH               ; (T7+1=8)
+    bp2f    BO_PORT_OUT0, 7             ; (T0+1) Display pixel 7 from SFR_DATA_EXCH
+    call    DELAY_7                     ; (T1+7 = 8)
+    bp2f    BO_PORT_OUT0, 6             ; (T0+1) Display pixel 6 from SFR_DATA_EXCH
+    call    DELAY_7                     ; (T1+7 = 8)
+    bp2f    BO_PORT_OUT0, 5             ; (T0+1) Display pixel 5 from SFR_DATA_EXCH
+    call    DELAY_7                     ; (T1+7 = 8)
+    bp2f    BO_PORT_OUT0, 4             ; (T0+1) Display pixel 4 from SFR_DATA_EXCH
+    call    DELAY_7                     ; (T1+7 = 8)
+    bp2f    BO_PORT_OUT0, 3             ; (T0+1) Display pixel 3 from SFR_DATA_EXCH
+    call    DELAY_7                     ; (T1+7 = 8)
+    bp2f    BO_PORT_OUT0, 2             ; (T0+1) Display pixel 2 from SFR_DATA_EXCH
+    call    DELAY_7                     ; (T1+7 = 8)
+    bp2f    BO_PORT_OUT0, 1             ; (T0+1) Display pixel 1 from SFR_DATA_EXCH
+    inc     SFR_INDIR_ADDR, F           ; (T1+1)
+    call    DELAY_6                     ; (T2+7 = 8)
+    bp2f    BO_PORT_OUT0, 0             ; (T0+1) Display pixel 0 from SFR_DATA_EXCH
+    ret                                 ; (T1+2) Calling back here takes 2 more clocks
+
+
+text_scanline:
+    ; Loop over columns, but without a counter
+    clr     SFR_DATA_EXCH       ; (T4+1) Start with blank pixels
+    mov     SFR_DATA_REG0, A    ; (T5+1) Display blank, load [0]
+    call    text_glyph_loop     ; (T6+2=8)
+    mov     SFR_DATA_REG1, A    ; (T5+1) Display [0], load [1]
+    call    text_glyph_loop     ; (T6+2=8)
+    mov     SFR_DATA_REG2, A    ; (T5+1) Display [1], load [2]
     call    text_glyph_loop
     mov     SFR_DATA_REG3, A    ; ...
     call    text_glyph_loop
@@ -224,10 +316,10 @@ display_text_horizontal_delay:
 
     inc     LINE_COUNTER, F     ; Next line of glyph data
 
-    ; Request interrupt if
+    ; Pend an interrupt if
     btss    LINE_COUNTER, 3         ; Rolled out of glyph data or
     btsc    SFR_CTRL_WR, 3          ; Host Requested int per scanline.
-    bs      SFR_SYS_CFG, SB_INT_REQ
+    bs      SFR_STATUS_REG, SB_GP_BIT_X
 
     ret
 
@@ -260,6 +352,8 @@ text_glyph_loop:
     bp2f    BO_PORT_OUT0, 7             ; (T0+1) Display pixel 7 from SFR_DATA_EXCH (next)
     jmp     DELAY_4                     ; (T1+4 = 5) Outter code takes +3 for mov+call.
 
+DELAY_8:
+    nop
 DELAY_7:
     nop
 DELAY_6:

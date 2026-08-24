@@ -143,27 +143,48 @@ int _write(int fd, const char *buf, int size) {
 
 extern "C" void PIOC_IRQHandler() __attribute__((interrupt));
 uint32_t PIOC_IRQHandler_counter = 0;
+uint32_t frame_counter = 0;
 void PIOC_IRQHandler() {
 	++PIOC_IRQHandler_counter;
 	if (PIOC->D8_SYS_CFG & RB_DATA_SW_MR) {
 		uint8_t scanline = PIOC->D8_CTRL_RD;
+		static uint32_t mode = 0;
 
 		if (scanline == 0xff) {
 			// Entering vblank
-			static uint32_t offset = 0;
 			for (size_t i=0; i< sizeof(vram); i++)
-				vram.u8[i] = i + offset;
-			offset++;
-		} else if (scanline % 8 == 0) {
-			uint32_t *p = vram.u32 + scanline/8 * (32 / sizeof(uint32_t));
-			PIOC->D32_DATA_REG0_3   = p[0];
-			PIOC->D32_DATA_REG4_7   = p[1];
-			PIOC->D32_DATA_REG8_11  = p[2];
-			PIOC->D32_DATA_REG12_15 = p[3];
-			PIOC->D32_DATA_REG16_19 = p[4];
-			PIOC->D32_DATA_REG20_23 = p[5];
-			PIOC->D32_DATA_REG24_27 = p[6];
-			PIOC->D32_DATA_REG28_31 = p[7];
+				vram.u8[i] = 0xff;// i + frame_counter;
+			frame_counter++;
+
+//			if (frame_counter % 32 == 0)
+				if (++mode == 3)
+					mode = 0;
+		} else if (mode==0) {
+			uint32_t val = 0xF0F0F0F0;
+			if (scanline / 4 % 2 == 0)
+				val = ~val;
+			PIOC->D32_DATA_REG0_3   = val;
+			PIOC->D32_DATA_REG4_7   = val;
+			PIOC->D32_DATA_REG8_11  = val;
+			PIOC->D32_DATA_REG12_15 = val;
+			PIOC->D32_DATA_REG16_19 = val;
+			PIOC->D32_DATA_REG20_23 = val;
+			PIOC->D32_DATA_REG24_27 = val;
+			PIOC->D32_DATA_REG28_31 = val;
+			PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
+		} else if (mode == 1) {
+			if (scanline % 8 == 0) {
+				uint32_t *p = vram.u32 + scanline/8 * (32 / sizeof(uint32_t));
+				PIOC->D32_DATA_REG0_3   = p[0];
+				PIOC->D32_DATA_REG4_7   = p[1];
+				PIOC->D32_DATA_REG8_11  = p[2];
+				PIOC->D32_DATA_REG12_15 = p[3];
+				PIOC->D32_DATA_REG16_19 = p[4];
+				PIOC->D32_DATA_REG20_23 = p[5];
+				PIOC->D32_DATA_REG24_27 = p[6];
+				PIOC->D32_DATA_REG28_31 = p[7];
+				PIOC->D8_CTRL_WR = 0x00; // Display text from line 0, do not interrupt until 8th scanline.
+			}
 		}
 	}
 	PIOC->D8_CTRL_RD = 0; // dummy write clear IRQ
