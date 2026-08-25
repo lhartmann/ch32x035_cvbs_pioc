@@ -1,3 +1,13 @@
+; Extra defines
+SB_TMR0_FREQ_DIV1024 EQU 0
+SB_TMR0_FREQ_DIV256  EQU 1
+SB_TMR0_FREQ_DIV64   EQU 2
+SB_TMR0_FREQ_DIV16   EQU 3
+SB_TMR0_FREQ_DIV8    EQU 4
+SB_TMR0_FREQ_DIV4    EQU 5
+SB_TMR0_FREQ_DIV2    EQU 6
+SB_TMR0_FREQ_DIV1    EQU 7
+
 timer_ntsc_setup:
     ; set period to 63.55us for a NTSC scanline
     ; With Fcpu=48MHz, period = 3050 clocks
