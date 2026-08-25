@@ -27,4 +27,5 @@ clean : cv_clean
 
 %.xbm: %.png
 	convert $< -colorspace Gray -dither FloydSteinberg -remap pattern:gray50 $@
+	# Change data type so array gets placed on FLASH, not SRAM.
 	sed -i 's/static char /static const uint8_t /' $@
