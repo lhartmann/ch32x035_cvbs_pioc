@@ -5,6 +5,8 @@
 #include "cvbs_text_32x24.pioc.h"
 #include "blink.pioc.h"
 #include "u8g2_256x192.h"
+#include "dvd.xbm"
+#include "ass.xbm"
 
 extern union PIOC_SRAM_u {
 	uint8_t  u8 [4096];
@@ -152,6 +154,25 @@ int _write(int fd, const char *buf, int size) {
 	return 0;
 }
 
+enum class DemoModes_e {
+	scrollingText,
+	staticText,
+	chess,
+	bouncyDot,
+	bouncyDvd,
+	ass,
+	end,
+	begin = scrollingText,
+} demoMode = DemoModes_e::begin;
+
+DemoModes_e &operator++(DemoModes_e &dm) {
+	int k = int(dm) + 1;
+	dm = DemoModes_e(k);
+	if (dm == DemoModes_e::end)
+		dm = DemoModes_e::begin;
+	return dm;
+}
+
 extern "C" void PIOC_IRQHandler() __attribute__((interrupt));
 uint32_t PIOC_IRQHandler_counter = 0;
 uint32_t frame_counter = 0;
@@ -159,35 +180,21 @@ void PIOC_IRQHandler() {
 	++PIOC_IRQHandler_counter;
 	if (PIOC->D8_SYS_CFG & RB_DATA_SW_MR) {
 		uint8_t scanline = PIOC->D8_CTRL_RD;
-		static uint32_t mode = 0;
 
-		if (scanline == 0xFF)
-			if (frame_counter++ % 256 == 0)
-				if (++mode == 5)
-					mode = 0;
-		mode = 4;
+		if (scanline == 0xFF) {
+			if (++frame_counter % 256 == 0) {
+				memset(vram.u8, 0, sizeof(vram));
+				if (++demoMode == DemoModes_e::end) {
+					demoMode = DemoModes_e::begin;
+				}
+			}
+		}
 
-		if (mode==0 ||  mode == 1) {
-			// Graphics demo 1: procedural bitmap
-			uint32_t val = 0xF0F0F0F0;
-			if (mode == 1)
-				val = 1 << (frame_counter/8%32);
-			else if (scanline / 4 % 2 == 0)
-				val = ~val;
-			PIOC->D32_DATA_REG0_3   = val;
-			PIOC->D32_DATA_REG4_7   = val;
-			PIOC->D32_DATA_REG8_11  = val;
-			PIOC->D32_DATA_REG12_15 = val;
-			PIOC->D32_DATA_REG16_19 = val;
-			PIOC->D32_DATA_REG20_23 = val;
-			PIOC->D32_DATA_REG24_27 = val;
-			PIOC->D32_DATA_REG28_31 = val;
-			PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
-		} else if (mode == 2 || mode == 3) {
+		if (demoMode == DemoModes_e::scrollingText || demoMode == DemoModes_e::staticText) {
 			// Text demos, still or fast scrolling text
 			if (scanline == 0xff)
 				for (size_t i=0; i<32*24; i++)
-					vram.u8[i] = i + frame_counter * (mode == 2);
+					vram.u8[i] = i + frame_counter * (demoMode == DemoModes_e::scrollingText);
 
 			if (scanline % 8 == 0) {
 				uint32_t *p = vram.u32 + scanline/8 * (32 / sizeof(uint32_t));
@@ -201,9 +208,27 @@ void PIOC_IRQHandler() {
 				PIOC->D32_DATA_REG28_31 = p[7];
 				PIOC->D8_CTRL_WR = 0x00; // Display text from line 0, do not interrupt until 8th scanline.
 			}
-		} else if (mode == 4) {
+		} else if (demoMode == DemoModes_e::chess) {
+			// Graphics demo 1: procedural bitmap
+			uint32_t val = 0xF0F0F0F0;
+			if (scanline / 4 % 2 == 0)
+				val = ~val;
+			PIOC->D32_DATA_REG0_3   = val;
+			PIOC->D32_DATA_REG4_7   = val;
+			PIOC->D32_DATA_REG8_11  = val;
+			PIOC->D32_DATA_REG12_15 = val;
+			PIOC->D32_DATA_REG16_19 = val;
+			PIOC->D32_DATA_REG20_23 = val;
+			PIOC->D32_DATA_REG24_27 = val;
+			PIOC->D32_DATA_REG28_31 = val;
+			PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
+		} else if (
+			demoMode == DemoModes_e::bouncyDot ||
+			demoMode == DemoModes_e::bouncyDvd ||
+			demoMode == DemoModes_e::ass
+		) {
 			// Graphics mode from vram
-			if (scanline == 0xff) {
+			if (scanline == 0xff && demoMode == DemoModes_e::bouncyDot) {
 				static size_t x=0, y=16;
 				static bool dx=true, dy = true;
 
@@ -231,9 +256,10 @@ void PIOC_IRQHandler() {
 						y -= 1;
 				}
 
-//				setpixel(x,y);
-
-				// NOP
+//				memset(vram.u8, 0, sizeof(vram));
+				setpixel(x,y);
+			} else if (scanline == 0xff && demoMode == DemoModes_e::bouncyDvd) {
+				// Draws on main. NOP here
 			} else {
 				uint32_t *p = vram.u32 + scanline*8;
 				PIOC->D32_DATA_REG0_3   = p[0];
@@ -288,7 +314,44 @@ int main()
 
 	while(1)
 	{
-		if (1) {
+		if (1 && demoMode == DemoModes_e::bouncyDvd) {
+			static size_t x=0, y=0;
+			static bool dx=true, dy = true;
+
+			if (dx) {
+				if (x == 255 - dvd_width)
+					dx = false;
+				else
+					x += 1;
+			} else {
+				if (x == 0)
+					dx = true;
+				else
+					x -= 1;
+			}
+
+			if (dy) {
+				if (y == 191 - dvd_height)
+					dy = false;
+				else
+					y += 1;
+			} else {
+				if (y == 0)
+					dy = true;
+				else
+					y -= 1;
+			}
+
+			u8g2_DrawXBMP(&u8g2, x, y, dvd_width, dvd_height, dvd_bits);
+			continue;
+		}
+		if (1 && demoMode == DemoModes_e::ass) {
+			u8g2_DrawXBMP(&u8g2, 0, 0, ass_width, ass_height, ass_bits);
+//			u8g2_DrawLine(&u8g2, 0,0,256,192);
+//			u8g2_DrawBitmap(&u8g2, 0, 0, ass_width/8, ass_height, ass_bits);
+			continue;
+		}
+		if (0) {
 			int x0 = my_random() % 256;
 			int x1 = my_random() % 256;
 			int y0 = my_random() % 192;
