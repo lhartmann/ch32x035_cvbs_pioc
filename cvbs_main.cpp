@@ -110,8 +110,6 @@ static void pioc_load(const uint8_t *data, int len)
 	memcpy(PIOC_SRAM.u8, data, len); // Load code
 	memset(PIOC_SRAM.u8 + len, 0x00, 4096 - len); // pad with NOP
 
-	memdump(PIOC_SRAM.u8, 4096);
-
 	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0;
 	PIOC->D8_SYS_CFG = RB_MST_IO_EN1 | RB_MST_IO_EN0 | RB_MST_CLK_GATE;
 }
@@ -161,6 +159,7 @@ enum class DemoModes_e {
 	bouncyDot,
 	bouncyDvd,
 	ass,
+	randomLines,
 	end,
 	begin = scrollingText,
 } demoMode = DemoModes_e::begin;
@@ -221,67 +220,36 @@ void PIOC_IRQHandler() {
 			PIOC->D32_DATA_REG20_23 = val;
 			PIOC->D32_DATA_REG24_27 = val;
 			PIOC->D32_DATA_REG28_31 = val;
+			PIOC->D8_CTRL_WR = 0x80; // Display graphics, interrupt after scanline.
+		} else {
+			// Graphics modes have vbuffer fllled on main
+			uint32_t *p = vram.u32 + scanline*8;
+			PIOC->D32_DATA_REG0_3   = p[0];
+			PIOC->D32_DATA_REG4_7   = p[1];
+			PIOC->D32_DATA_REG8_11  = p[2];
+			PIOC->D32_DATA_REG12_15 = p[3];
+			PIOC->D32_DATA_REG16_19 = p[4];
+			PIOC->D32_DATA_REG20_23 = p[5];
+			PIOC->D32_DATA_REG24_27 = p[6];
+			PIOC->D32_DATA_REG28_31 = p[7];
 			PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
-		} else if (
-			demoMode == DemoModes_e::bouncyDot ||
-			demoMode == DemoModes_e::bouncyDvd ||
-			demoMode == DemoModes_e::ass
-		) {
-			// Graphics mode from vram
-			if (scanline == 0xff && demoMode == DemoModes_e::bouncyDot) {
-				static size_t x=0, y=16;
-				static bool dx=true, dy = true;
-
-				if (dx) {
-					if (x == 255)
-						dx = false;
-					else
-						x += 1;
-				} else {
-					if (x == 0)
-						dx = true;
-					else
-						x -= 1;
-				}
-
-				if (dy) {
-					if (y == 191)
-						dy = false;
-					else
-						y += 1;
-				} else {
-					if (y == 0)
-						dy = true;
-					else
-						y -= 1;
-				}
-
-//				memset(vram.u8, 0, sizeof(vram));
-				setpixel(x,y);
-			} else if (scanline == 0xff && demoMode == DemoModes_e::bouncyDvd) {
-				// Draws on main. NOP here
-			} else {
-				uint32_t *p = vram.u32 + scanline*8;
-				PIOC->D32_DATA_REG0_3   = p[0];
-				PIOC->D32_DATA_REG4_7   = p[1];
-				PIOC->D32_DATA_REG8_11  = p[2];
-				PIOC->D32_DATA_REG12_15 = p[3];
-				PIOC->D32_DATA_REG16_19 = p[4];
-				PIOC->D32_DATA_REG20_23 = p[5];
-				PIOC->D32_DATA_REG24_27 = p[6];
-				PIOC->D32_DATA_REG28_31 = p[7];
-				PIOC->D8_CTRL_WR = 0x80; // Display text from line 0, do not interrupt until 8th scanline.
-			}
 		}
 	}
 	PIOC->D8_CTRL_RD = 0; // dummy write clear IRQ
+}
+
+uint32_t vsync_was = frame_counter;
+void vsync() {
+	while (vsync_was == frame_counter)
+		asm volatile("" ::: "memory");
+	vsync_was = frame_counter;
 }
 
 uint32_t my_random() {
 	static uint32_t seed = 0x12345678;
 	for (int i=0; i<32; ++i)
 		seed = memtest_seed_next(seed);
-	return seed;
+	return seed ^ (seed >> 16);
 }
 
 int main()
@@ -310,10 +278,85 @@ int main()
 
 	memset(&vram, 0, sizeof(vram));
 	init_u8g2(vram.u8);
-	u8g2_DrawLine(&u8g2, 0, 0, 255, 192);
+
+	// Dump bootloader for analysis
+	printf("Bootloader area dump:")
+	memdump((void*)0x1FFF0000, 3*1024 + 256);
 
 	while(1)
 	{
+		vsync();
+		if (1 && demoMode == DemoModes_e::bouncyDot) {
+			size_t moved = 0;
+			while (moved < 17) {
+				auto makeden = []() -> int {
+					return 0x00100000;
+				};
+				auto makenum = [](int den) -> int {
+					int min = den *  2 / 16;
+					int max = den * 14 / 16;
+					return (uint64_t(my_random()) * (max-min)) >> 32 + min;
+				};
+				static size_t x=0;
+				static int dx_num = 1;
+				static int dx_den = 1;
+				static int dx_acc = 0;
+				dx_acc += dx_num;
+				if (dx_acc > dx_den) {
+					if (x == 255) {
+						dx_acc = 0;
+						dx_den = makeden();
+						dx_num = -makenum(dx_den);
+					} else {
+						dx_acc -= dx_den;
+						x += 1;
+						moved++;
+					}
+				}
+				if (dx_acc < -dx_den) {
+					if (x == 0) {
+						dx_acc = 0;
+						dx_den = makeden();
+						dx_num = +makenum(dx_den);
+					} else {
+						dx_acc += dx_den;
+						x -= 1;
+						moved++;
+					}
+				}
+
+				static size_t y=0;
+				static int dy_num = 1;
+				static int dy_den = 1;
+				static int dy_acc = 0;
+				dy_acc += dy_num;
+				if (dy_acc > dy_den) {
+					if (y == 191) {
+						dy_acc = 0;
+						dy_den = makeden();
+						dy_num = -makenum(dy_den);
+					} else {
+						dy_acc -= dy_den;
+						y += 1;
+						moved++;
+					}
+				}
+				if (dy_acc < -dy_den) {
+					if (y == 0) {
+						dy_acc = 0;
+						dy_den = makeden();
+						dy_num = +makenum(dy_den);
+					} else {
+						dy_acc += dy_den;
+						y -= 1;
+						moved++;
+					}
+				}
+
+				setpixel(x,y);
+			}
+			continue;
+		}
 		if (1 && demoMode == DemoModes_e::bouncyDvd) {
 			static size_t x=0, y=0;
 			static bool dx=true, dy = true;
@@ -347,11 +390,13 @@ int main()
 		}
 		if (1 && demoMode == DemoModes_e::ass) {
 			u8g2_DrawXBMP(&u8g2, 0, 0, ass_width, ass_height, ass_bits);
-//			u8g2_DrawLine(&u8g2, 0,0,256,192);
-//			u8g2_DrawBitmap(&u8g2, 0, 0, ass_width/8, ass_height, ass_bits);
+
+			while (demoMode == DemoModes_e::ass)
+				asm volatile("" ::: "memory");
+
 			continue;
 		}
-		if (0) {
+		if (1 && demoMode == DemoModes_e::randomLines) {
 			int x0 = my_random() % 256;
 			int x1 = my_random() % 256;
 			int y0 = my_random() % 192;
