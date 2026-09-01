@@ -280,7 +280,7 @@ int main()
 	init_u8g2(vram.u8);
 
 	// Dump bootloader for analysis
-	printf("Bootloader area dump:")
+	printf("Bootloader area dump:");
 	memdump((void*)0x1FFF0000, 3*1024 + 256);
 
 	while(1)
