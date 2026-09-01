@@ -251,6 +251,9 @@ uint32_t my_random() {
 		seed = memtest_seed_next(seed);
 	return seed ^ (seed >> 16);
 }
+uint32_t my_random(uint32_t min, uint32_t max) {
+	return ((uint64_t(my_random()) * (max-min)) >> 32) + min;
+}
 
 int main()
 {
@@ -293,9 +296,7 @@ int main()
 					return 0x00100000;
 				};
 				auto makenum = [](int den) -> int {
-					int min = den *  2 / 16;
-					int max = den * 14 / 16;
-					return (uint64_t(my_random()) * (max-min)) >> 32 + min;
+					return my_random(den*2/16, den*14/16);
 				};
 				static size_t x=0;
 				static int dx_num = 1;
