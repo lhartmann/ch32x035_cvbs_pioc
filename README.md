@@ -1,6 +1,6 @@
 #  CVBS/NTSC output using PIOC
 
-[![Watch the video](https://youtu.be/MoTCtjU0OzA)](https://youtu.be/MoTCtjU0OzA)
+![Watch video](https://youtu.be/PxQdHacNtDA)
 
 PIOC runs all the sync signals and interrupts host when data is needed, and when entering vblank. Resolution is 256x192.
 PIOC code also holds 256 8x8 glyphs for font/tile data, which would result in 32x24 characters.
