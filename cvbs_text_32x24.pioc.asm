@@ -161,6 +161,12 @@ display_text_horizontal_delay:
     decsz   DELAY_COUNTER, F
     jmp     display_text_horizontal_delay
 
+    ; If master changed command, update line counter
+    mov     LINE_COUNTER, A
+    btsc    SFR_SYS_CFG, SB_DATA_MW_SR
+    mov     SFR_CTRL_WR, A
+    mova    LINE_COUNTER
+
     btss    SFR_CTRL_WR, 7      ; (T1+1 or T1+2) CMD bit 7 means bitmap scanline
     jmp     text_scanline       ; (T2+2 or ----)
 
